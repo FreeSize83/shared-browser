@@ -1,0 +1,25 @@
+{$DOMAIN} {
+	handle /oauth2/* {
+		reverse_proxy oauth2-proxy:4180
+	}
+
+	handle {
+		forward_auth oauth2-proxy:4180 {
+			uri /oauth2/auth
+			copy_headers X-Auth-Request-User
+			@error status 401
+			handle_response @error {
+				redir * /oauth2/sign_in?rd={scheme}://{host}{uri} 302
+			}
+		}
+
+		# Авто-вход в Neko под GitHub-ником: пользователь не видит вторую форму логина
+		@nologin {
+			path /
+			not query usr=*
+		}
+		redir @nologin /?usr={http.request.header.X-Auth-Request-User}&pwd=x 302
+
+		reverse_proxy neko:8080
+	}
+}

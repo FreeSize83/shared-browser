@@ -1,0 +1,62 @@
+services:
+  neko:
+    image: ghcr.io/m1k1o/neko/firefox:latest
+    restart: unless-stopped
+    shm_size: 2gb
+    ports:
+      # WebRTC media (напрямую, мимо прокси)
+      - "52000:52000/udp"
+      - "52000:52000/tcp"
+    volumes:
+      # политики Firefox: uBlock, автоплей, без всплывающих запросов (путь зависит от версии образа)
+      - ./policies.json:/usr/lib/firefox/distribution/policies.json:ro
+      - ./policies.json:/usr/lib/firefox-esr/distribution/policies.json:ro
+    environment:
+      NEKO_DESKTOP_SCREEN: "1920x1080@30"
+      NEKO_SERVER_BIND: ":8080"
+      NEKO_SERVER_PROXY: "true"
+      # все, кто прошёл GitHub-вход, попадают в одну общую сессию
+      NEKO_MEMBER_PROVIDER: "noauth"
+      NEKO_SESSION_IMPLICIT_HOSTING: "true"
+      NEKO_WEBRTC_UDPMUX: "52000"
+      NEKO_WEBRTC_TCPMUX: "52000"
+      NEKO_WEBRTC_NAT1TO1: "${PUBLIC_IP}"
+      NEKO_WEBRTC_ICELITE: "true"
+
+  oauth2-proxy:
+    image: quay.io/oauth2-proxy/oauth2-proxy:latest
+    restart: unless-stopped
+    environment:
+      OAUTH2_PROXY_PROVIDER: github
+      OAUTH2_PROXY_CLIENT_ID: "${GITHUB_CLIENT_ID}"
+      OAUTH2_PROXY_CLIENT_SECRET: "${GITHUB_CLIENT_SECRET}"
+      OAUTH2_PROXY_COOKIE_SECRET: "${COOKIE_SECRET}"
+      OAUTH2_PROXY_REDIRECT_URL: "https://${DOMAIN}/oauth2/callback"
+      OAUTH2_PROXY_HTTP_ADDRESS: "0.0.0.0:4180"
+      OAUTH2_PROXY_EMAIL_DOMAINS: "*"
+      OAUTH2_PROXY_UPSTREAMS: "static://202"
+      OAUTH2_PROXY_REVERSE_PROXY: "true"
+      OAUTH2_PROXY_SET_XAUTHREQUEST: "true"
+      OAUTH2_PROXY_COOKIE_SECURE: "true"
+      OAUTH2_PROXY_SKIP_PROVIDER_BUTTON: "true"
+      # не заставлять входить заново: сессия на 30 дней
+      OAUTH2_PROXY_COOKIE_EXPIRE: "720h"
+      OAUTH2_PROXY_COOKIE_REFRESH: "1h"
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: "${DOMAIN}"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+    depends_on:
+      - neko
+      - oauth2-proxy
+
+volumes:
+  caddy_data:
